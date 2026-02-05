@@ -2,8 +2,6 @@
 
 # STORM PS4 PKG INSTALLER
 
-<div align="center">
-
 **Нативное приложение для PlayStation 4, предназначенное для фоновой установки PKG-файлов с использованием системного загрузчика (BGFT) и современного интерфейса ImGui.**
 
 [![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
