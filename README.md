@@ -1,10 +1,10 @@
-# STORM PS4 PKG INSTALLER
+<h1 align="center">STORM PS4 PKG INSTALLER</h1>
 
 ## **О проекте**
 STORM PS4 PKG INSTALLER — клиентское приложение для удаленной пакетной установки игр, обновлений и DLC в формате PKG на консоли Sony PlayStation 4 по локальной сети через Remote Package Installer (RPI).
 
 ## **Происхождение и форки**
-Оригинальная разработка ReiKatari на базе спецификаций PlayStation 4 Remote Package Installer API.
+Оригинальная разработка на базе спецификаций PlayStation 4 Remote Package Installer API.
 
 ## **Технологический стек**
 - **Языки программирования**: TypeScript, JavaScript (Node.js)
@@ -21,15 +21,13 @@ STORM PS4 PKG INSTALLER — клиентское приложение для у�
 - **Целевые устройства**: Sony PlayStation 4 (Fat, Slim, Pro) с кастомной прошивкой / GoldHEN
 
 ## **Установка и запуск**
-1. Скачайте установщик из раздела **Releases**.
+1. Скачайте инсталлятор `STORM_PS4_PKG_INSTALLER_<версия>_Setup.exe` или архив `STORM_PS4_PKG_INSTALLER_<версия>.zip` из раздела **Releases**.
 2. Запустите приложение, укажите IP-адрес PlayStation 4 с запущенным Remote Package Installer.
 
 ## **Безопасность и цифровые подписи**
 Подписано цифровой подписью **CN=STORM SOFT, O=STORM EDEN** (SHA-256 Authenticode).
 
-## **Авторы и лицензия**
-- **Автор проекта**: ReiKatari
-- **Лицензия**: MIT License
-
 ## **Благодарности**
-- **Команда PlayStation 4 Scene и разработчики GoldHEN** — за инфраструктуру и протокол Remote Package Installer.
+- **flat_z** — за разработку оригинального приложения Remote Package Installer для PS4.
+- **SiSTRo и GoldHEN Team** — за разработку и поддержку окружения GoldHEN для PlayStation 4.
+- **Flatz, Specter, CTurt и PS4 Scene** — за исследования архитектуры Orbis OS.
