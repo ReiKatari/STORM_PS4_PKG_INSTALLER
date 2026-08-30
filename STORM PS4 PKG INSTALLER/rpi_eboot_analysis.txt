@@ -1,0 +1,7 @@
+﻿llvm-objdump : C:\Program Files\LLVM\bin\llvm-objdump.exe: error: 'rpi_extracted/eboot.bin': no such file or directory
+строка:1 знак:1
++ llvm-objdump -p rpi_extracted/eboot.bin 2>&1 | Out-File -Encoding utf ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Program File...le or directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
