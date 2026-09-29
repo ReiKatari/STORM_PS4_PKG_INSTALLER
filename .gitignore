@@ -5,12 +5,22 @@ dist/
 build/
 out/
 target/
+x64/
+Debug/
+Release/
 Assembling/
 scratch/
 gar_data/
 *.exe
 *.dll
 *.obj
+*.o
+*.elf
+*.oelf
+*.prx
+*.sprx
+*.bin
+*.pkg
 *.zip
 *.7z
 *.rar
@@ -21,14 +31,25 @@ gar_data/
 *.pfx
 *.cer
 
-# Keep tools in STORM SWITCH BOX if needed
-!tools/**/*.exe
-!tools/**/*.dll
+# PS4 Package Installer specific
+STORM_PKG/x64/
+rpi_extracted/
+eboot.bin
+ull
+*.txt.bak
+*.log*
 
 # Keep branding icons
 !Files/*.ico
 !Files/*.png
 !Files/*.svg
+!assets/*.png
+!assets/*.ttf
+!assets/*.ico
+!STORM PS4 PKG INSTALLER/assets/*.png
+!STORM PS4 PKG INSTALLER/assets/*.ttf
+!STORM PS4 PKG INSTALLER/sce_sys/*.png
+!STORM PS4 PKG INSTALLER/sce_sys/param.sfo
 
 # IDE & Environment
 .vs/
@@ -40,8 +61,10 @@ Thumbs.db
 Desktop.ini
 *.log
 *.tmp
+*.tmp*
 node_modules/
-
+__pycache__/
+*.pyc
 
 # STORM SOFT Security & Large File Shield
 .env
@@ -54,6 +77,4 @@ node_modules/
 deepseek_key.txt
 google-credentials.json
 installer/Output/
-*.tmp*
 *.wal
-
