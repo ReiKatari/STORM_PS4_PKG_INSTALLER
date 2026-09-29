@@ -1,9 +1,11 @@
-// STORM PS4 PKG INSTALLER v1.44 - Advanced UI
+// STORM PS4 PKG INSTALLER v1.50 - Advanced UI
 #include "../include/Graphics.h"
 #include "../include/Installer.h"
 #include "../include/WebServer.h"
 #include "../include/ThreadHelper.h"
 #include "../include/HttpHelper.h"
+#include "../include/Localization.h"
+#include "../include/font_data.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -108,7 +110,8 @@ void* WebServerThread(void* arg) {
 
 int main() {
     LogInit();
-    Log("=== STORM PS4 PKG INSTALLER v1.44 ===");
+    Localization_Init();
+    Log("=== STORM PS4 PKG INSTALLER v1.50 ===");
     
     // Load system modules
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_VIDEO_OUT);
@@ -117,6 +120,7 @@ int main() {
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_HTTP);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_USER_SERVICE);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SYSTEM_SERVICE);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_PAD);
     // POSIX is included via -lScePosix
     Log("Modules loaded");
@@ -159,11 +163,11 @@ int main() {
     bool hasGraphics = scene->Init(0xC000000, 2);
     Log("Graphics: %s", hasGraphics ? "OK" : "FAIL");
     
-    // Init web server
+    // Init web server with dual ports: 12813 (STORM) and 12800 (standard RPI)
     WebServer_SetInstaller(installer);
-    int serverRet = WebServer_Start(PORT);
+    int serverRet = WebServer_Start(PORT, 12800);
     bool hasServer = (serverRet == 0);
-    Log("Server: %s (ret=%d)", hasServer ? "OK" : "FAIL", serverRet);
+    Log("Server: %s (ret=%d, ports=%d/%d)", hasServer ? "OK" : "FAIL", serverRet, PORT, WebServer_GetRpiPort());
 
     // Init Pad (Relies on Installer having init UserService)
     int32_t userId = installer->GetUserId();
@@ -171,7 +175,8 @@ int main() {
     
     // Show startup notification
     char startupMsg[128];
-    snprintf(startupMsg, sizeof(startupMsg), "STORM PKG v1.44 - %s:%d", ipAddr, PORT);
+    snprintf(startupMsg, sizeof(startupMsg), "STORM PKG v1.50 - %s:%d/%d [%s]", 
+             ipAddr, PORT, WebServer_GetRpiPort(), Localization_GetLanguageCode());
     ShowNotification(startupMsg);
 
     // Modern Colors (Dark Theme)
@@ -331,11 +336,11 @@ int main() {
     snprintf(debugMsg, sizeof(debugMsg), "%s | US:%d Pad:%d(%d) | %s", 
              cwd, userId, padHandle, padInitRes, bgStatusMsg);
     ShowNotification(debugMsg);
-    Font* fontRegular = NULL;
-    Font* fontBold = NULL;
-    Font* fontHeader = NULL;
-    Font* fontSmall = NULL;
-    Log("Using bitmap text (no custom fonts).");
+    Font* fontHeader = new Font(century_gothic_ttf, century_gothic_ttf_len, 32);
+    Font* fontBold = new Font(century_gothic_ttf, century_gothic_ttf_len, 24);
+    Font* fontRegular = new Font(century_gothic_ttf, century_gothic_ttf_len, 20);
+    Font* fontSmall = new Font(century_gothic_ttf, century_gothic_ttf_len, 16);
+    Log("Century Gothic TrueType fonts loaded from memory.");
     
     Log("Startup done. Entering main loop.");
     
@@ -408,11 +413,11 @@ int main() {
                            
                            if (isActive) {
                                installer->StopTask(tid);
-                               ShowNotification("Task Stopped");
+                               ShowNotification(Loc(STR_TASK_STOPPED));
                            }
                            
                             installer->UnregisterTask(tid);
-                            ShowNotification("Task Removed from List");
+                            ShowNotification(Loc(STR_TASK_REMOVED));
                             
                             // MEMORY FIX: Clean up icon cache when task is removed
                             if (iconCache.find(tid) != iconCache.end()) {
@@ -468,6 +473,15 @@ int main() {
                    if (count > 0 && selectedRow < count) {
                        showFullscreenIcon = true;
                    }
+               }
+
+               // LANGUAGE SWITCH (Triangle)
+               if ((btns & ORBIS_PAD_BUTTON_TRIANGLE) && !(lastButtons & ORBIS_PAD_BUTTON_TRIANGLE)) {
+                   Localization_CycleLanguage();
+                   char langMsg[128];
+                   snprintf(langMsg, sizeof(langMsg), "%s: %s", 
+                            Loc(STR_LANG_NAME), Localization_GetLanguageCode());
+                   ShowNotification(langMsg);
                }
            }
            lastButtons = btns;
@@ -538,10 +552,13 @@ int main() {
         if (hasGraphics) {
             scene->FrameBufferClear();
             
-            // 1. Background Layer - OPTIMIZED: Use BlitBuffer if cache exists
+            // 1. Background Layer (drawn behind everything)
             if (bgCache) {
-                // FAST PATH: memcpy entire pre-converted buffer (~100x faster!)
                 scene->BlitBuffer(bgCache, bgCacheW, bgCacheH);
+                scene->DrawRectangle(0, 0, 1920, 1080, Color(10, 12, 18, 195));
+            } else if (bgPic0 && bgPic0->data) {
+                bgPic0->Draw(scene, 0, 0, 1920, 1080);
+                scene->DrawRectangle(0, 0, 1920, 1080, Color(10, 12, 18, 195));
             } else {
                 // Fallback: Gradient (only when no background image)
                 for (int y = 0; y < 1080; y++) {
@@ -560,19 +577,22 @@ int main() {
             scene->DrawRectangle(0, 98, 1920, 2, colAccent); // Accent line
             
             // Title
-            // Title
-            if (fontHeader && fontHeader->ttf_buffer) fontHeader->DrawText(scene, 50, 65, "STORM PS4 PKG INSTALLER v1.44", colText);
-            else scene->DrawText("STORM PS4 PKG INSTALLER v1.44", 50, 35, colText);
+            if (fontHeader && fontHeader->ttf_buffer) fontHeader->DrawText(scene, 50, 42, Loc(STR_APP_TITLE), colText);
+            else scene->DrawText(Loc(STR_APP_TITLE), 50, 35, colText);
             
-
+            // Language hint & active language
+            char langHint[128];
+            snprintf(langHint, sizeof(langHint), "%s [%s]  |  %s", Loc(STR_HELP_LANG), Localization_GetLanguageCode(), Loc(STR_LANG_NAME));
+            if (fontSmall && fontSmall->ttf_buffer) fontSmall->DrawText(scene, 50, 75, langHint, Color(0, 210, 255));
+            else scene->DrawText(langHint, 50, 75, Color(0, 210, 255), 1);
             
-            // Server Info
+            // Server Info (both primary and RPI port)
             char statusLine[128];
-            snprintf(statusLine, sizeof(statusLine), "%s : %d  |  %s", 
-                     ipAddr, PORT, s_serverRunning ? "ONLINE" : "OFFLINE");
+            snprintf(statusLine, sizeof(statusLine), "%s : %d/%d  |  %s", 
+                     ipAddr, PORT, WebServer_GetRpiPort(), s_serverRunning ? Loc(STR_ONLINE) : Loc(STR_OFFLINE));
             Color statusCol = s_serverRunning ? colSuccess : colError;
-            if (fontBold && fontBold->ttf_buffer) fontBold->DrawText(scene, 1350, 65, statusLine, statusCol);
-            else scene->DrawText(statusLine, 1300, 35, statusCol, 3);
+            if (fontBold && fontBold->ttf_buffer) fontBold->DrawText(scene, 1260, 42, statusLine, statusCol);
+            else scene->DrawText(statusLine, 1200, 35, statusCol, 3);
             
             // DEBUG OVERLAY (Centered)
             char padDebug[256];
@@ -592,7 +612,7 @@ int main() {
                 }
             }
             char strCompletedStats[64];
-            snprintf(strCompletedStats, sizeof(strCompletedStats), "%d COMPLETED", totalCompletedCount);
+            snprintf(strCompletedStats, sizeof(strCompletedStats), "%d %s", totalCompletedCount, Loc(STR_COMPLETED));
             
             char strSizeStats[64];
             if (totalInstalledSize < 1024*1024) snprintf(strSizeStats, 63, "%.2f MB", (float)totalInstalledSize / (1024.0f*1024.0f));
@@ -623,30 +643,29 @@ int main() {
             int xSTATUS = tableX + 1480; 
             int xPROG = tableX + 1680;
             
-            // Stats Text (Raised + Larger)
-            // Was: tableY-20, Scale 2. Now: tableY-60, Scale 3.
-            scene->DrawText(strSizeStats, xSIZE, tableY - 50, Color(200, 200, 200), 3);
-            scene->DrawText(strCompletedStats, xSTATUS, tableY - 50, Color(100, 255, 100), 3);
+            // Stats Text
+            if (fontBold && fontBold->ttf_buffer) {
+                fontBold->DrawText(scene, xSIZE, tableY - 45, strSizeStats, Color(200, 200, 200));
+                fontBold->DrawText(scene, xSTATUS, tableY - 45, strCompletedStats, Color(100, 255, 100));
+            } else {
+                scene->DrawText(strSizeStats, xSIZE, tableY - 50, Color(200, 200, 200), 3);
+                scene->DrawText(strCompletedStats, xSTATUS, tableY - 50, Color(100, 255, 100), 3);
+            }
 
             // Header Text
-            scene->DrawText("ID", xID, tableY + 10, Color(150,200,250), 2);
-            scene->DrawText("CAT", xCAT, tableY + 10, Color(150,200,250), 2);
-            scene->DrawText("ICON", xICON, tableY + 10, Color(150,200,250), 2); 
-            scene->DrawText("TITLE", xTITLE, tableY + 10, Color(150,200,250), 2);
-            scene->DrawText("TITLE ID", xTITLEID, tableY + 10, Color(150,200,250), 2);
-            scene->DrawText("SIZE", xSIZE, tableY + 10, Color(150,200,250), 2);
-            scene->DrawText("STATUS", xSTATUS, tableY + 10, Color(150,200,250), 2);
-            scene->DrawText("PROGRESS", xPROG, tableY + 10, Color(150,200,250), 2);
-            
-            auto GetCategoryDisplay = [](const char* raw) -> const char* {
-                if (!raw) return "UNK";
-                if (strcasecmp(raw, "gd") == 0) return "GAME";
-                if (strcasecmp(raw, "gp") == 0) return "UPDATE";
-                if (strcasecmp(raw, "ac") == 0) return "DLC";
-                if (strcasecmp(raw, "th") == 0 || strcasecmp(raw, "THEME") == 0) return "THEME";
-                return raw;
+            auto DrawHeaderCol = [&](const char* text, int x) {
+                if (fontBold && fontBold->ttf_buffer) fontBold->DrawText(scene, x, tableY + 8, text, Color(150, 200, 250));
+                else scene->DrawText(text, x, tableY + 10, Color(150, 200, 250), 2);
             };
-
+            DrawHeaderCol(Loc(STR_COL_ID), xID);
+            DrawHeaderCol(Loc(STR_COL_CAT), xCAT);
+            DrawHeaderCol(Loc(STR_COL_ICON), xICON);
+            DrawHeaderCol(Loc(STR_COL_TITLE), xTITLE);
+            DrawHeaderCol(Loc(STR_COL_TITLE_ID), xTITLEID);
+            DrawHeaderCol(Loc(STR_COL_SIZE), xSIZE);
+            DrawHeaderCol(Loc(STR_COL_STATUS), xSTATUS);
+            DrawHeaderCol(Loc(STR_COL_PROGRESS), xPROG);
+            
             for (int i = 0; i < taskCount; i++) {
                 if (i < scrollOffset || i >= scrollOffset + rowsPerPage) continue;
                 int visualIndex = i - scrollOffset; // 0..rowsPerPage-1
@@ -687,40 +706,44 @@ int main() {
                 Color statColor = colText;
                 
                 if (strstr(tasks[i].status, "Downloading") || strstr(tasks[i].status, "Installing")) {
+                    statusText = strstr(tasks[i].status, "Installing") ? Loc(STR_INSTALLING) : Loc(STR_DOWNLOADING);
                     statColor = colActivePulse;
-                }
-                if (strstr(tasks[i].status, "Completed") || strstr(tasks[i].status, "Installed")) {
-                    statusText = "COMPLETED"; // Unified status
+                } else if (strstr(tasks[i].status, "Completed") || strstr(tasks[i].status, "Installed")) {
+                    statusText = Loc(STR_COMPLETED);
                     statColor = colSuccess;
-                }
-                if (strstr(tasks[i].status, "Error") || strstr(tasks[i].status, "Err")) {
+                } else if (strstr(tasks[i].status, "Error") || strstr(tasks[i].status, "Err")) {
+                    statusText = Loc(STR_ERROR);
                     statColor = colError;
+                } else if (strstr(tasks[i].status, "Queued")) {
+                    statusText = Loc(STR_QUEUED);
+                } else if (strstr(tasks[i].status, "Paused") || strstr(tasks[i].status, "Stopped")) {
+                    statusText = Loc(STR_PAUSED);
                 }
                 
-                const char* catDisplay = GetCategoryDisplay(tasks[i].category);
+                const char* catDisplay = LocCategory(tasks[i].category);
                 char idStr[16]; snprintf(idStr, 15, "#%d", tasks[i].taskId);
-                scene->DrawText(idStr, xID, rowY + 15, colText, 2);
-                scene->DrawText(catDisplay, xCAT, rowY + 15, Color(200, 200, 100), 2);
-                scene->DrawText(tasks[i].title, xTITLE, rowY + 15, colText, 2);
-                
-                // Draw Title ID (RESTORED)
-                scene->DrawText(tasks[i].titleId, xTITLEID, rowY + 15, Color(200, 200, 200), 2);
 
-                
-                scene->DrawText(sizeStr, xSIZE, rowY + 15, colText, 2);
-                scene->DrawText(statusText, xSTATUS, rowY + 15, statColor, 2);
-                scene->DrawText(progStr, xPROG, rowY + 15, colText, 2);
+                auto DrawRowText = [&](const char* text, int x, Color color) {
+                    if (fontRegular && fontRegular->ttf_buffer) {
+                        fontRegular->DrawText(scene, x, rowY + 38, text, color);
+                    } else {
+                        scene->DrawText(text, x, rowY + 35, color, 2);
+                    }
+                };
+
+                DrawRowText(idStr, xID, colText);
+                DrawRowText(catDisplay, xCAT, Color(200, 200, 100));
+                DrawRowText(tasks[i].title, xTITLE, colText);
+                DrawRowText(tasks[i].titleId, xTITLEID, Color(200, 200, 200));
+                DrawRowText(sizeStr, xSIZE, colText);
+                DrawRowText(statusText, xSTATUS, statColor);
+                DrawRowText(progStr, xPROG, colText);
             }
             
-            // 5. FOREGROUND PRIORITY (Background Image) (As an overlay)
-            if (bgPic0 && bgPic0->data) {
-                bgPic0->Draw(scene, 0, 0, 1920, 1080);
-            }
-
-            // 6. MENU OVERLAY (Topmost)
+            // 4. MENU OVERLAY (Topmost)
             if (showMenu) {
                 // Dim background
-                scene->DrawRectangle(0, 0, 1920, 1080, Color(0, 0, 0, 150));
+                scene->DrawRectangle(0, 0, 1920, 1080, Color(0, 0, 0, 180));
                 
                 int menuW = 600;
                 int menuH = 300;
@@ -728,52 +751,82 @@ int main() {
                 int menuY = (1080 - menuH) / 2;
                 
                 // Menu Card
-                scene->DrawRectangle(menuX, menuY, menuW, menuH, Color(40, 40, 50, 255));
-                scene->DrawRectangle(menuX, menuY, menuW, 50, Color(30, 30, 35, 255)); // Header
-                scene->DrawText("Manage Task", menuX + 20, menuY + 10, colAccent, 3);
+                scene->DrawRectangle(menuX, menuY, menuW, menuH, Color(30, 32, 42, 255));
+                scene->DrawRectangle(menuX, menuY, menuW, 55, Color(20, 22, 30, 255)); // Header
+                scene->DrawRectangle(menuX, menuY + 53, menuW, 2, colAccent);
+                
+                if (fontBold && fontBold->ttf_buffer) {
+                    fontBold->DrawText(scene, menuX + 25, menuY + 15, Loc(STR_MENU_MANAGE), colAccent);
+                } else {
+                    scene->DrawText(Loc(STR_MENU_MANAGE), menuX + 20, menuY + 10, colAccent, 3);
+                }
                 
                 // Option 1: Remove / Cancel
                 Color opt1Col = (menuOption == 0) ? colActivePulse : colText;
-                const char* opt1Text = "Delete / Cancel Task";
-                scene->DrawText(opt1Text, menuX + 50, menuY + 100, opt1Col, 3);
-                if (menuOption == 0) scene->DrawRectangle(menuX + 40, menuY + 100, 10, 30, colAccent);
+                const char* opt1Text = Loc(STR_MENU_DELETE);
+                if (fontRegular && fontRegular->ttf_buffer) {
+                    fontRegular->DrawText(scene, menuX + 60, menuY + 100, opt1Text, opt1Col);
+                } else {
+                    scene->DrawText(opt1Text, menuX + 50, menuY + 100, opt1Col, 3);
+                }
+                if (menuOption == 0) scene->DrawRectangle(menuX + 40, menuY + 100, 8, 26, colAccent);
                 
                 // Option 2: Back
                 Color opt2Col = (menuOption == 1) ? colActivePulse : colText;
-                const char* opt2Text = "Back (Circle)";
-                scene->DrawText(opt2Text, menuX + 50, menuY + 180, opt2Col, 3);
-                 if (menuOption == 1) scene->DrawRectangle(menuX + 40, menuY + 180, 10, 30, colAccent);
+                const char* opt2Text = Loc(STR_MENU_BACK);
+                if (fontRegular && fontRegular->ttf_buffer) {
+                    fontRegular->DrawText(scene, menuX + 60, menuY + 175, opt2Text, opt2Col);
+                } else {
+                    scene->DrawText(opt2Text, menuX + 50, menuY + 180, opt2Col, 3);
+                }
+                if (menuOption == 1) scene->DrawRectangle(menuX + 40, menuY + 175, 8, 26, colAccent);
                  
                 // Helper text
-                scene->DrawText("Press X to Select", menuX + 20, menuY + 260, Color(150, 150, 150), 2);
+                if (fontSmall && fontSmall->ttf_buffer) {
+                    fontSmall->DrawText(scene, menuX + 25, menuY + 255, Loc(STR_HELP_SELECT), Color(160, 160, 170));
+                } else {
+                    scene->DrawText(Loc(STR_HELP_SELECT), menuX + 20, menuY + 260, Color(150, 150, 150), 2);
+                }
             }
 
-            // 7. FULLSCREEN ICON OVERLAY (Extreme Topmost)
+            // 5. FULLSCREEN ICON OVERLAY (Extreme Topmost)
             if (showFullscreenIcon && selectedRow < taskCount) {
-                 scene->DrawRectangle(0, 0, 1920, 1080, Color(0, 0, 0, 220)); // Dim darker
+                 scene->DrawRectangle(0, 0, 1920, 1080, Color(0, 0, 0, 230)); // Dim darker
                  
                  int tid = tasks[selectedRow].taskId;
                  PNG* icon = NULL;
                  if (iconCache.find(tid) != iconCache.end()) icon = iconCache[tid];
                  
                  if (icon) {
-                     // Center it
-                     // Assuming 512x512 max or similar
                      int iW = 512;
                      int iH = 512;
                      int iX = (1920 - iW) / 2;
-                     int iY = (1080 - iH) / 2;
+                     int iY = (1080 - iH) / 2 - 30;
                      icon->Draw(scene, iX, iY, iW, iH);
                      
                      // Draw Title below
                      char titleBuf[128];
                      strncpy(titleBuf, tasks[selectedRow].title, 64);
-                     scene->DrawText(titleBuf, iX, iY + iH + 20, colText, 3);
+                     titleBuf[63] = '\0';
+                     if (fontBold && fontBold->ttf_buffer) {
+                         int titleW = fontBold->GetTextWidth(titleBuf);
+                         fontBold->DrawText(scene, (1920 - titleW) / 2, iY + iH + 30, titleBuf, colText);
+                     } else {
+                         scene->DrawText(titleBuf, iX, iY + iH + 20, colText, 3);
+                     }
                  } else {
-                     scene->DrawText("No Icon Available", (1920/2)-200, 1080/2, colError, 3);
+                     if (fontBold && fontBold->ttf_buffer) {
+                         fontBold->DrawText(scene, (1920 / 2) - 150, 1080 / 2, Loc(STR_NO_ICON), colError);
+                     } else {
+                         scene->DrawText(Loc(STR_NO_ICON), (1920/2)-200, 1080/2, colError, 3);
+                     }
                  }
                  
-                 scene->DrawText("Press any button to close", (1920/2)-300, 1000, Color(150, 150, 150), 2);
+                 if (fontRegular && fontRegular->ttf_buffer) {
+                     fontRegular->DrawText(scene, (1920 / 2) - 160, 1000, Loc(STR_HELP_CLOSE), Color(160, 160, 170));
+                 } else {
+                     scene->DrawText(Loc(STR_HELP_CLOSE), (1920/2)-300, 1000, Color(150, 150, 150), 2);
+                 }
             }
 
             scene->SubmitFlip(frameID);
@@ -789,6 +842,11 @@ int main() {
     delete[] tasks;
     delete installer;
     delete scene;
+    if (fontHeader) delete fontHeader;
+    if (fontBold) delete fontBold;
+    if (fontRegular) delete fontRegular;
+    if (fontSmall) delete fontSmall;
+    if (bgPic0) delete bgPic0;
     
     // MEMORY FIX: Full icon cache cleanup
     Log("Cleaning up Icon Cache (%d items)...", (int)iconCache.size());

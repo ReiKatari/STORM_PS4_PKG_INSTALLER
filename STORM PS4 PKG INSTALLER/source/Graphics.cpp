@@ -18,7 +18,8 @@
 #include "../include/Common.h"
 
 // Font Implementation
-Font::Font(const char* path, int pixelHeight) : ttf_buffer(NULL), pixelHeight(pixelHeight), scale(0) {
+// Font Implementation
+Font::Font(const char* path, int pixelHeight) : ttf_buffer(NULL), is_allocated(false), pixelHeight(pixelHeight), scale(0) {
     FILE* f = fopen(path, "rb");
     if (!f) {
         Log("Font: Failed to open %s", path);
@@ -38,11 +39,13 @@ Font::Font(const char* path, int pixelHeight) : ttf_buffer(NULL), pixelHeight(pi
     
     fread(ttf_buffer, 1, size, f);
     fclose(f);
+    is_allocated = true;
     
     if (!stbtt_InitFont(&info, ttf_buffer, stbtt_GetFontOffsetForIndex(ttf_buffer, 0))) {
         Log("Font: stbtt_InitFont failed for %s", path);
         free(ttf_buffer);
         ttf_buffer = NULL;
+        is_allocated = false;
         return;
     }
     
@@ -50,44 +53,97 @@ Font::Font(const char* path, int pixelHeight) : ttf_buffer(NULL), pixelHeight(pi
     Log("Font: Loaded %s (size=%ld)", path, size);
 }
 
+Font::Font(const uint8_t* buffer, size_t size, int pixelHeight) : ttf_buffer(NULL), is_allocated(false), pixelHeight(pixelHeight), scale(0) {
+    if (!buffer || size == 0) return;
+    ttf_buffer = (uint8_t*)buffer;
+    is_allocated = false;
+    
+    if (!stbtt_InitFont(&info, ttf_buffer, stbtt_GetFontOffsetForIndex(ttf_buffer, 0))) {
+        Log("Font: stbtt_InitFont failed for memory buffer");
+        ttf_buffer = NULL;
+        return;
+    }
+    
+    scale = stbtt_ScaleForPixelHeight(&info, (float)pixelHeight);
+    Log("Font: Loaded from memory buffer (size=%zu, height=%d)", size, pixelHeight);
+}
+
 Font::~Font() {
-    if (ttf_buffer) free(ttf_buffer);
+    if (ttf_buffer && is_allocated) {
+        free(ttf_buffer);
+        ttf_buffer = NULL;
+    }
+}
+
+// UTF-8 decoding helper
+static uint32_t Utf8NextCodepoint(const char** pStr) {
+    const uint8_t* s = (const uint8_t*)*pStr;
+    if (!s || !*s) return 0;
+    
+    uint32_t cp = 0;
+    if (s[0] < 0x80) {
+        cp = s[0];
+        *pStr += 1;
+    } else if ((s[0] & 0xE0) == 0xC0 && s[1]) {
+        cp = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
+        *pStr += 2;
+    } else if ((s[0] & 0xF0) == 0xE0 && s[1] && s[2]) {
+        cp = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+        *pStr += 3;
+    } else if ((s[0] & 0xF8) == 0xF0 && s[1] && s[2] && s[3]) {
+        cp = ((s[0] & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+        *pStr += 4;
+    } else {
+        cp = s[0];
+        *pStr += 1;
+    }
+    return cp;
 }
 
 int Font::GetTextWidth(const char* text) {
     if (!ttf_buffer || !text) return 0;
     int width = 0;
-    int ascent, descent, lineGap;
-    stbtt_GetFontVMetrics(&info, &ascent, &descent, &lineGap);
+    const char* ptr = text;
+    uint32_t prevCp = 0;
+    uint32_t cp = 0;
     
-    for (int i = 0; text[i]; i++) {
+    while ((cp = Utf8NextCodepoint(&ptr)) != 0) {
         int ax, lsb;
-        stbtt_GetCodepointHMetrics(&info, text[i], &ax, &lsb);
+        stbtt_GetCodepointHMetrics(&info, (int)cp, &ax, &lsb);
         width += (int)(ax * scale);
         
-        if (text[i+1]) {
-            int kern = stbtt_GetCodepointKernAdvance(&info, text[i], text[i+1]);
+        if (prevCp != 0) {
+            int kern = stbtt_GetCodepointKernAdvance(&info, (int)prevCp, (int)cp);
             width += (int)(kern * scale);
         }
+        prevCp = cp;
     }
     return width;
 }
 
 int Font::DrawText(Scene2D* scene, int x, int y, const char* text, Color color) {
-    if (!ttf_buffer || !text) return 0;
+    if (!ttf_buffer || !text || !scene) return 0;
     
     int ascent, descent, lineGap;
     stbtt_GetFontVMetrics(&info, &ascent, &descent, &lineGap);
     int baseline = y + (int)(ascent * scale);
     
     int startX = x;
+    const char* ptr = text;
+    uint32_t prevCp = 0;
+    uint32_t cp = 0;
     
-    for (int i = 0; text[i]; i++) {
+    while ((cp = Utf8NextCodepoint(&ptr)) != 0) {
+        if (prevCp != 0) {
+            int kern = stbtt_GetCodepointKernAdvance(&info, (int)prevCp, (int)cp);
+            x += (int)(kern * scale);
+        }
+        
         int ax, lsb;
-        stbtt_GetCodepointHMetrics(&info, text[i], &ax, &lsb);
+        stbtt_GetCodepointHMetrics(&info, (int)cp, &ax, &lsb);
         
         int c_x1, c_y1, c_x2, c_y2;
-        stbtt_GetCodepointBitmapBox(&info, text[i], scale, scale, &c_x1, &c_y1, &c_x2, &c_y2);
+        stbtt_GetCodepointBitmapBox(&info, (int)cp, scale, scale, &c_x1, &c_y1, &c_x2, &c_y2);
         
         int y_off = baseline + c_y1;
         int x_off = x + c_x1;
@@ -96,27 +152,25 @@ int Font::DrawText(Scene2D* scene, int x, int y, const char* text, Color color) 
         int w = c_x2 - c_x1;
         int h = c_y2 - c_y1;
         
-        if (w > 0 && h > 0 && w * h < 16384) {
-            uint8_t bitmap[16384]; // Max 128x128 glyph
-            stbtt_MakeCodepointBitmap(&info, bitmap, w, h, w, scale, scale, text[i]);
+        if (w > 0 && h > 0 && w * h < 65536) {
+            uint8_t bitmap[65536]; // Max 256x256 glyph
+            stbtt_MakeCodepointBitmap(&info, bitmap, w, h, w, scale, scale, (int)cp);
             
             for (int r = 0; r < h; r++) {
+                int py = y_off + r;
                 for (int c = 0; c < w; c++) {
                     uint8_t alpha = bitmap[r * w + c];
                     if (alpha > 0) {
                         Color pixelCol = color;
-                        // Blend alpha
                         pixelCol.a = (uint8_t)((alpha * color.a) / 255);
-                        scene->DrawPixel(x_off + c, y_off + r, pixelCol);
+                        scene->DrawPixel(x_off + c, py, pixelCol);
                     }
                 }
             }
         }
         
         x += (int)(ax * scale);
-        if (text[i+1]) {
-            x += (int)(stbtt_GetCodepointKernAdvance(&info, text[i], text[i+1]) * scale);
-        }
+        prevCp = cp;
     }
     
     return x - startX;
@@ -408,13 +462,46 @@ void Scene2D::DrawText(const char* text, int x, int y, Color color, int scale) {
     if (!text) return;
     
     int cursorX = x;
-    // scale is passed as argument
+    const char* ptr = text;
+    uint32_t cp = 0;
     
-    for (int i = 0; text[i]; i++) {
-        char c = text[i];
-        if (c >= 'a' && c <= 'z') c -= 32; // Uppercase only for this basic font
-        if (c < 32 || c > 95) c = ' ';
+    while ((cp = Utf8NextCodepoint(&ptr)) != 0) {
+        char c = ' ';
+        if (cp >= 'a' && cp <= 'z') c = (char)(cp - 32);
+        else if (cp >= 32 && cp <= 95) c = (char)cp;
+        else if (cp >= 0x0430 && cp <= 0x044F) cp -= 0x20; // Cyrillic lower to upper
         
+        // Map Cyrillic to readable fallback glyphs
+        if (cp == 0x0410) c = 'A';      // А
+        else if (cp == 0x0411) c = 'B'; // Б
+        else if (cp == 0x0412) c = 'B'; // В
+        else if (cp == 0x0413) c = 'r'; // Г
+        else if (cp == 0x0414) c = 'D'; // Д
+        else if (cp == 0x0415 || cp == 0x0401) c = 'E'; // Е / Ё
+        else if (cp == 0x0416) c = 'X'; // Ж
+        else if (cp == 0x0417) c = '3'; // З
+        else if (cp == 0x0418 || cp == 0x0419) c = 'N'; // И / Й
+        else if (cp == 0x041A) c = 'K'; // К
+        else if (cp == 0x041B) c = 'L'; // Л
+        else if (cp == 0x041C) c = 'M'; // М
+        else if (cp == 0x041D) c = 'H'; // Н
+        else if (cp == 0x041E) c = 'O'; // О
+        else if (cp == 0x041F) c = 'P'; // П
+        else if (cp == 0x0420) c = 'P'; // Р
+        else if (cp == 0x0421) c = 'C'; // С
+        else if (cp == 0x0422) c = 'T'; // Т
+        else if (cp == 0x0423) c = 'Y'; // У
+        else if (cp == 0x0424) c = 'O'; // Ф
+        else if (cp == 0x0425) c = 'X'; // Х
+        else if (cp == 0x0426) c = 'C'; // Ц
+        else if (cp == 0x0427) c = '4'; // Ч
+        else if (cp == 0x0428 || cp == 0x0429) c = 'W'; // Ш / Щ
+        else if (cp == 0x042C || cp == 0x042A || cp == 0x042B) c = 'b'; // Ь / Ъ / Ы
+        else if (cp == 0x042D) c = 'E'; // Э
+        else if (cp == 0x042E) c = 'O'; // Ю
+        else if (cp == 0x042F) c = 'R'; // Я
+        
+        if (c < 32 || c > 95) c = ' ';
         int idx = (c - 32) * 5;
         
         for (int col = 0; col < 5; col++) {

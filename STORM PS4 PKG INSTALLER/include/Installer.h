@@ -4,7 +4,7 @@
 
 #include <orbis/Bgft.h>
 
-#define MAX_TASKS 9999
+#define MAX_TASKS 256
 
 struct InstallTask {
     int taskId;

@@ -13,7 +13,10 @@
 #include <fcntl.h>
 
 // Server state
-static int s_serverSocket = -1;
+static int s_serverSocketPrimary = -1;
+static int s_serverSocketRpi = -1;
+static int s_primaryPort = 12813;
+static int s_rpiPort = 12800;
 static bool s_running = false;
 static char s_lastError[256] = {0};
 static Installer* s_installer = nullptr;
@@ -49,11 +52,22 @@ static void ExtractUrl(const char* json, char* outUrl, int maxLen) {
     if (!urlStart) return;
     
     int i = 0;
-    while (urlStart[i] && urlStart[i] != '"' && urlStart[i] != '}' && urlStart[i] != ' ' && i < maxLen - 1) {
+    while (urlStart[i] && urlStart[i] != '"' && urlStart[i] != '}' && urlStart[i] != ']' && urlStart[i] != ' ' && i < maxLen - 1) {
         outUrl[i] = urlStart[i];
         i++;
     }
     outUrl[i] = '\0';
+
+    // Unescape JSON escaped slashes (\/ -> /)
+    char* src = outUrl;
+    char* dst = outUrl;
+    while (*src) {
+        if (*src == '\\' && *(src + 1) == '/') {
+            src++;
+        }
+        *dst++ = *src++;
+    }
+    *dst = '\0';
 }
 
 // Helper: Extract unsigned long long from JSON key
@@ -504,25 +518,27 @@ static void HandleRequest(int conn) {
     } else {
         // Default: show status
         char json[256];
-        snprintf(json, sizeof(json), "{\"status\":\"success\",\"app\":\"STORM PS4 PKG INSTALLER\",\"version\":\"1.44\"}\n");
+        snprintf(json, sizeof(json), "{\"status\":\"success\",\"app\":\"STORM PS4 PKG INSTALLER\",\"version\":\"1.50\",\"primary_port\":%d,\"rpi_port\":%d}\n",
+                 s_primaryPort, s_rpiPort);
         WebServer_SendSuccess(conn, json);
     }
     
     close(conn);
 }
 
-int WebServer_Start(int port) {
-    s_serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (s_serverSocket < 0) {
-        snprintf(s_lastError, sizeof(s_lastError), "socket() failed");
-        return -1;
-    }
+int WebServer_GetPrimaryPort() { return s_primaryPort; }
+int WebServer_GetRpiPort() { return s_rpiPort; }
+bool WebServer_IsRpiPortActive() { return s_serverSocketRpi >= 0; }
+
+static int CreateBoundSocket(int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return -1;
     
-    int flags = fcntl(s_serverSocket, F_GETFL, 0);
-    fcntl(s_serverSocket, F_SETFL, flags | O_NONBLOCK);
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
     
     int reuse = 1;
-    setsockopt(s_serverSocket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -530,18 +546,45 @@ int WebServer_Start(int port) {
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(port);
     
-    if (bind(s_serverSocket, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-        snprintf(s_lastError, sizeof(s_lastError), "bind() failed on port %d", port);
-        close(s_serverSocket);
-        s_serverSocket = -1;
+    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        close(sock);
         return -2;
     }
     
-    if (listen(s_serverSocket, 10) != 0) {
-        snprintf(s_lastError, sizeof(s_lastError), "listen() failed");
-        close(s_serverSocket);
-        s_serverSocket = -1;
+    if (listen(sock, 16) != 0) {
+        close(sock);
         return -3;
+    }
+    
+    return sock;
+}
+
+int WebServer_Start(int port, int rpiPort) {
+    s_primaryPort = port;
+    s_rpiPort = rpiPort;
+    
+    // Bind primary port (12813)
+    s_serverSocketPrimary = CreateBoundSocket(s_primaryPort);
+    if (s_serverSocketPrimary < 0) {
+        snprintf(s_lastError, sizeof(s_lastError), "bind() failed on primary port %d", s_primaryPort);
+        Log("WebServer: Failed to bind primary port %d", s_primaryPort);
+    } else {
+        Log("WebServer: Listening on primary port %d", s_primaryPort);
+    }
+    
+    // Bind standard RPI port (12800) for universal compatibility
+    if (rpiPort > 0 && rpiPort != port) {
+        s_serverSocketRpi = CreateBoundSocket(rpiPort);
+        if (s_serverSocketRpi < 0) {
+            Log("WebServer: Could not bind standard RPI port %d (in use or restricted)", rpiPort);
+        } else {
+            Log("WebServer: Listening on standard RPI port %d", rpiPort);
+        }
+    }
+    
+    if (s_serverSocketPrimary < 0 && s_serverSocketRpi < 0) {
+        s_running = false;
+        return -1;
     }
     
     s_running = true;
@@ -550,14 +593,18 @@ int WebServer_Start(int port) {
 
 void WebServer_Stop() {
     s_running = false;
-    if (s_serverSocket >= 0) {
-        close(s_serverSocket);
-        s_serverSocket = -1;
+    if (s_serverSocketPrimary >= 0) {
+        close(s_serverSocketPrimary);
+        s_serverSocketPrimary = -1;
+    }
+    if (s_serverSocketRpi >= 0) {
+        close(s_serverSocketRpi);
+        s_serverSocketRpi = -1;
     }
 }
 
 bool WebServer_IsRunning() {
-    return s_running && s_serverSocket >= 0;
+    return s_running && (s_serverSocketPrimary >= 0 || s_serverSocketRpi >= 0);
 }
 
 const char* WebServer_GetLastError() {
@@ -565,20 +612,33 @@ const char* WebServer_GetLastError() {
 }
 
 void WebServer_Process() {
-    if (!s_running || s_serverSocket < 0) return;
+    if (!s_running) return;
     
-    // Handle multiple connections in one iteration to prevent TCP backlog overflow
-    // Limit to 10 per cycle to avoid blocking the UI thread for too long
-    for (int i = 0; i < 10; i++) {
-        struct sockaddr_in clientAddr;
-        socklen_t addrLen = sizeof(clientAddr);
-        int conn = accept(s_serverSocket, (struct sockaddr*)&clientAddr, &addrLen);
-        
-        if (conn >= 0) {
-            HandleRequest(conn);
-        } else {
-            // EWOULDBLOCK or EAGAIN means no more waiting connections
-            break;
+    // Process up to 5 connections on primary port (12813)
+    if (s_serverSocketPrimary >= 0) {
+        for (int i = 0; i < 5; i++) {
+            struct sockaddr_in clientAddr;
+            socklen_t addrLen = sizeof(clientAddr);
+            int conn = accept(s_serverSocketPrimary, (struct sockaddr*)&clientAddr, &addrLen);
+            if (conn >= 0) {
+                HandleRequest(conn);
+            } else {
+                break;
+            }
+        }
+    }
+    
+    // Process up to 5 connections on standard RPI port (12800)
+    if (s_serverSocketRpi >= 0) {
+        for (int i = 0; i < 5; i++) {
+            struct sockaddr_in clientAddr;
+            socklen_t addrLen = sizeof(clientAddr);
+            int conn = accept(s_serverSocketRpi, (struct sockaddr*)&clientAddr, &addrLen);
+            if (conn >= 0) {
+                HandleRequest(conn);
+            } else {
+                break;
+            }
         }
     }
 }

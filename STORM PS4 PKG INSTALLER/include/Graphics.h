@@ -76,10 +76,12 @@ class Font {
 public:
     stbtt_fontinfo info;
     uint8_t* ttf_buffer;
+    bool is_allocated;
     float scale;
     int pixelHeight;
 
     Font(const char* path, int pixelHeight);
+    Font(const uint8_t* buffer, size_t size, int pixelHeight);
     ~Font();
     
     // Draw string using this font. Returns width of drawn string.
