@@ -1,6 +1,7 @@
 #include "../include/SystemInfo.h"
 #include "../include/Common.h"
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/statvfs.h>
 #include <sys/mount.h>
 #include <dlfcn.h>

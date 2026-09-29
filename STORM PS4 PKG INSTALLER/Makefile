@@ -26,22 +26,25 @@ LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr -L
 # Create intermediate directory
 _unused     := $(shell mkdir -p $(INTDIR) 2>nul)
 
-# Windows detection
+# Platform detection
 ifeq ($(OS),Windows_NT)
 	CC      := clang
 	CCX     := clang++
 	LD      := ld.lld
 	CDIR    := windows
+	MKDIR   := powershell -Command "New-Item -ItemType Directory -Force -Path '$(INTDIR)'" > nul
+else
+	CC      := clang
+	CCX     := clang++
+	LD      := ld.lld
+	CDIR    := linux
+	MKDIR   := mkdir -p $(INTDIR)
 endif
 
 all: $(CONTENT_ID).pkg
 
-$(CONTENT_ID).pkg: pkg.gp4
-	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core pkg_build $< .
-
-pkg.gp4: eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/pic0.png sce_sys/pic1.png sce_sys/keystone sce_sys/about/right.sprx sce_module/libc.prx sce_module/libjbc.prx sce_module/libSceFios2.prx assets/centurygothic.ttf assets/centurygothic_bold.ttf assets/bg.png
-	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
-	@echo "GP4 Created. Verify assets match target paths in pkg.gp4"
+$(CONTENT_ID).pkg: eboot.bin sce_sys/param.sfo pkg.gp4
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core pkg_build pkg.gp4 .
 
 sce_sys/param.sfo: Makefile
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_new $@
@@ -65,10 +68,13 @@ $(INTDIR)/%.o: source/%.cpp | $(INTDIR)
 
 $(INTDIR):
 	@echo Creating directory: $(INTDIR)
-	@powershell -Command "New-Item -ItemType Directory -Force -Path '$(INTDIR)'" > nul
+	@$(MKDIR)
 
 clean:
 	@echo Cleaning...
-	@del /F /Q $(CONTENT_ID).pkg pkg.gp4 eboot.bin 2>NUL || echo ""
-	@del /F /Q pkg\\sce_sys\\param.sfo 2>NUL || echo ""
+ifeq ($(OS),Windows_NT)
+	@del /F /Q $(CONTENT_ID).pkg eboot.bin 2>NUL || echo ""
 	@del /F /Q $(INTDIR)\\*.o $(INTDIR)\\*.elf $(INTDIR)\\*.oelf 2>NUL || echo ""
+else
+	@rm -f $(CONTENT_ID).pkg eboot.bin $(INTDIR)/*.o $(INTDIR)/*.elf $(INTDIR)/*.oelf
+endif

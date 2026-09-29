@@ -1,0 +1,68 @@
+name: Build PS4 PKG & Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ '*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build PS4 Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compile and Build PS4 PKG
+        uses: OpenOrbis/toolchain-action@master
+        with:
+          version: latest
+          command: |
+            cd "STORM PS4 PKG INSTALLER"
+            make clean || true
+            make
+
+      - name: Prepare Release Artifacts
+        run: |
+          cd "STORM PS4 PKG INSTALLER"
+          if [ -f "IV0000-SPPI01313_00-STORMPKGINSTALL0.pkg" ]; then
+            echo "PKG file created successfully!"
+            ls -lh IV0000-SPPI01313_00-STORMPKGINSTALL0.pkg
+            cp IV0000-SPPI01313_00-STORMPKGINSTALL0.pkg ../STORM_PS4_PKG_INSTALLER_1.60.pkg
+          else
+            echo "Error: PKG file was not generated"
+            exit 1
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: STORM_PS4_PKG_INSTALLER_1.60
+          path: |
+            STORM_PS4_PKG_INSTALLER_1.60.pkg
+            STORM PS4 PKG INSTALLER/IV0000-SPPI01313_00-STORMPKGINSTALL0.pkg
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: 1.60
+          name: STORM PS4 PKG INSTALLER 1.60
+          body_path: RELEASE_NOTES.md
+          files: |
+            STORM_PS4_PKG_INSTALLER_1.60.pkg
+            STORM PS4 PKG INSTALLER/IV0000-SPPI01313_00-STORMPKGINSTALL0.pkg
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
