@@ -1,10 +1,11 @@
-// STORM PS4 PKG INSTALLER v1.50 - Advanced UI
+// STORM PS4 PKG INSTALLER v1.60 - Advanced UI
 #include "../include/Graphics.h"
 #include "../include/Installer.h"
 #include "../include/WebServer.h"
 #include "../include/ThreadHelper.h"
 #include "../include/HttpHelper.h"
 #include "../include/Localization.h"
+#include "../include/SystemInfo.h"
 #include "../include/font_data.h"
 #include <stdio.h>
 #include <string.h>
@@ -163,11 +164,15 @@ int main() {
     bool hasGraphics = scene->Init(0xC000000, 2);
     Log("Graphics: %s", hasGraphics ? "OK" : "FAIL");
     
-    // Init web server with dual ports: 12813 (STORM) and 12800 (standard RPI)
+    // Init System and Hardware info
+    SystemInfo_Init();
+    
+    // Init web server with 3 ports: 12813 (STORM), 12800 (RPI) and 12801 (PackageFlow)
     WebServer_SetInstaller(installer);
-    int serverRet = WebServer_Start(PORT, 12800);
+    int serverRet = WebServer_Start(PORT, 12800, 12801);
     bool hasServer = (serverRet == 0);
-    Log("Server: %s (ret=%d, ports=%d/%d)", hasServer ? "OK" : "FAIL", serverRet, PORT, WebServer_GetRpiPort());
+    Log("Server: %s (ret=%d, ports=%d/%d/%d)", hasServer ? "OK" : "FAIL", serverRet, 
+        PORT, WebServer_GetRpiPort(), WebServer_GetPkgFlowPort());
 
     // Init Pad (Relies on Installer having init UserService)
     int32_t userId = installer->GetUserId();
@@ -175,8 +180,8 @@ int main() {
     
     // Show startup notification
     char startupMsg[128];
-    snprintf(startupMsg, sizeof(startupMsg), "STORM PKG v1.50 - %s:%d/%d [%s]", 
-             ipAddr, PORT, WebServer_GetRpiPort(), Localization_GetLanguageCode());
+    snprintf(startupMsg, sizeof(startupMsg), "STORM PKG v1.60 - %s:%d/%d/%d [%s]", 
+             ipAddr, PORT, WebServer_GetRpiPort(), WebServer_GetPkgFlowPort(), Localization_GetLanguageCode());
     ShowNotification(startupMsg);
 
     // Modern Colors (Dark Theme)
@@ -572,43 +577,81 @@ int main() {
                 }
             }
             
-            // 2. Header Layer
-            scene->DrawRectangle(0, 0, 1920, 100, colHeader);
-            scene->DrawRectangle(0, 98, 1920, 2, colAccent); // Accent line
+            // 2. Header Layer (115px height, beautifully grouped)
+            int headerH = 115;
+            scene->DrawRectangle(0, 0, 1920, headerH, colHeader);
+            scene->DrawRectangle(0, headerH - 2, 1920, 2, colAccent); // Accent line
             
-            // Title
-            if (fontHeader && fontHeader->ttf_buffer) fontHeader->DrawText(scene, 50, 42, Loc(STR_APP_TITLE), colText);
-            else scene->DrawText(Loc(STR_APP_TITLE), 50, 35, colText);
+            // App Title (Left Top)
+            if (fontHeader && fontHeader->ttf_buffer) fontHeader->DrawText(scene, 45, 38, Loc(STR_APP_TITLE), colText);
+            else scene->DrawText(Loc(STR_APP_TITLE), 45, 32, colText);
             
-            // Language hint & active language
-            char langHint[128];
-            snprintf(langHint, sizeof(langHint), "%s [%s]  |  %s", Loc(STR_HELP_LANG), Localization_GetLanguageCode(), Loc(STR_LANG_NAME));
-            if (fontSmall && fontSmall->ttf_buffer) fontSmall->DrawText(scene, 50, 75, langHint, Color(0, 210, 255));
-            else scene->DrawText(langHint, 50, 75, Color(0, 210, 255), 1);
-            
-            // Server Info (both primary and RPI port)
-            char statusLine[128];
-            snprintf(statusLine, sizeof(statusLine), "%s : %d/%d  |  %s", 
-                     ipAddr, PORT, WebServer_GetRpiPort(), s_serverRunning ? Loc(STR_ONLINE) : Loc(STR_OFFLINE));
-            Color statusCol = s_serverRunning ? colSuccess : colError;
-            if (fontBold && fontBold->ttf_buffer) fontBold->DrawText(scene, 1260, 42, statusLine, statusCol);
-            else scene->DrawText(statusLine, 1200, 35, statusCol, 3);
-            
-            // DEBUG OVERLAY (Centered)
-            char padDebug[256];
-            snprintf(padDebug, 255, "Pad:%d Btns:%08X | %s", padHandle, lastButtons, bgStatusMsg);
-            // Calculate center position (rough estimate)
-            int textLen = strlen(padDebug);
-            int textX = (1920 - textLen * 8) / 2; // Approx 8px per char
-            scene->DrawText(padDebug, textX, 82, Color(255, 255, 0), 1);
+            // Console Model, FW and GoldHEN info (Left Bottom)
+            const SystemModelInfo* sysInfo = SystemInfo_Get();
+            char sysModelLine[128];
+            snprintf(sysModelLine, sizeof(sysModelLine), "%s  |  FW %s  |  %s", 
+                     sysInfo->modelName, sysInfo->firmwareStr, sysInfo->henName);
+            if (fontSmall && fontSmall->ttf_buffer) fontSmall->DrawText(scene, 45, 80, sysModelLine, Color(140, 180, 220));
+            else scene->DrawText(sysModelLine, 45, 80, Color(140, 180, 220), 1);
 
-            // Stats
+            // Language Switch Hint (Left Center)
+            char langHint[64];
+            snprintf(langHint, sizeof(langHint), "▲ [%s] %s", Localization_GetLanguageCode(), Loc(STR_LANG_NAME));
+            if (fontSmall && fontSmall->ttf_buffer) fontSmall->DrawText(scene, 370, 80, langHint, Color(0, 210, 255));
+            else scene->DrawText(langHint, 370, 80, Color(0, 210, 255), 1);
+            
+            // Server Info (Right Top: 3 Ports: 12813 / 12800 / 12801)
+            char statusLine[128];
+            snprintf(statusLine, sizeof(statusLine), "%s : %d/%d/%d  |  %s", 
+                     ipAddr, PORT, WebServer_GetRpiPort(), WebServer_GetPkgFlowPort(), 
+                     s_serverRunning ? Loc(STR_ONLINE) : Loc(STR_OFFLINE));
+            Color statusCol = s_serverRunning ? colSuccess : colError;
+            if (fontBold && fontBold->ttf_buffer) fontBold->DrawText(scene, 1140, 38, statusLine, statusCol);
+            else scene->DrawText(statusLine, 1140, 32, statusCol, 3);
+            
+            // Storage Query & Display (Right Bottom)
+            static StorageInfo userStorage;
+            static int storageTimer = 0;
+            if (storageTimer++ % 60 == 0) {
+                SystemInfo_GetStorage("/user", &userStorage);
+            }
+            char storageLine[128];
+            snprintf(storageLine, sizeof(storageLine), "%s: %.1f GB %s %.1f GB", 
+                     Loc(STR_STORAGE), userStorage.freeGB, Loc(STR_FREE_OF), userStorage.totalGB);
+            Color storageCol = userStorage.isLowSpace ? Color(255, 90, 90) : Color(200, 220, 240);
+            if (fontSmall && fontSmall->ttf_buffer) fontSmall->DrawText(scene, 1140, 80, storageLine, storageCol);
+            else scene->DrawText(storageLine, 1140, 80, storageCol, 1);
+
+            // Storage Visual Gauge Bar (Right Corner)
+            int barX = 1620;
+            int barY = 82;
+            int barW = 160;
+            int barH = 12;
+            scene->DrawRectangle(barX - 1, barY - 1, barW + 2, barH + 2, Color(45, 55, 75, 200)); // Border
+            scene->DrawRectangle(barX, barY, barW, barH, Color(18, 22, 32, 240)); // Track
+            int fillW = (int)((barW * (100 - userStorage.percentUsed)) / 100);
+            if (fillW < 0) fillW = 0;
+            if (fillW > barW) fillW = barW;
+            Color barFillColor = userStorage.isLowSpace ? Color(255, 70, 70) : Color(0, 220, 160);
+            scene->DrawRectangle(barX, barY, fillW, barH, barFillColor);
+
+            char pctStr[16];
+            snprintf(pctStr, sizeof(pctStr), "%d%%", 100 - userStorage.percentUsed);
+            if (fontSmall && fontSmall->ttf_buffer) fontSmall->DrawText(scene, barX + barW + 8, 80, pctStr, Color(160, 180, 200));
+            else scene->DrawText(pctStr, barX + barW + 8, 80, Color(160, 180, 200), 1);
+
+            // Stats calculation
             uint64_t totalInstalledSize = 0;
             int totalCompletedCount = 0;
+            uint64_t totalQueueSize = 0;
+            int totalQueueCount = 0;
             for (int i = 0; i < taskCount; i++) {
                 if (strstr(tasks[i].status, "Completed") || strstr(tasks[i].status, "Installed")) {
                     totalCompletedCount++;
                     totalInstalledSize += tasks[i].totalSize;
+                } else {
+                    totalQueueCount++;
+                    totalQueueSize += tasks[i].totalSize;
                 }
             }
             char strCompletedStats[64];
@@ -643,7 +686,19 @@ int main() {
             int xSTATUS = tableX + 1480; 
             int xPROG = tableX + 1680;
             
-            // Stats Text
+            // Queue Stats (Left over table)
+            char strQueueStats[64];
+            char qSizeBuf[32];
+            if (totalQueueSize < 1024*1024) snprintf(qSizeBuf, sizeof(qSizeBuf), "%.1f MB", (float)totalQueueSize / (1024.0f*1024.0f));
+            else snprintf(qSizeBuf, sizeof(qSizeBuf), "%.2f GB", (float)totalQueueSize / (1024.0f*1024.0f*1024.0f));
+            snprintf(strQueueStats, sizeof(strQueueStats), "%s: %d  |  %s", Loc(STR_QUEUE_STATS), totalQueueCount, qSizeBuf);
+            if (fontBold && fontBold->ttf_buffer) {
+                fontBold->DrawText(scene, xID, tableY - 45, strQueueStats, Color(150, 200, 250));
+            } else {
+                scene->DrawText(strQueueStats, xID, tableY - 50, Color(150, 200, 250), 3);
+            }
+
+            // Completed Stats (Right over table)
             if (fontBold && fontBold->ttf_buffer) {
                 fontBold->DrawText(scene, xSIZE, tableY - 45, strSizeStats, Color(200, 200, 200));
                 fontBold->DrawText(scene, xSTATUS, tableY - 45, strCompletedStats, Color(100, 255, 100));

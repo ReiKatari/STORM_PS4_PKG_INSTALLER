@@ -113,7 +113,7 @@ Installer::Installer() {
     moduleLoadResult = 0;
     jbcResult = 0;
     
-    Log("=== STORM PS4 PKG INSTALLER v1.44 ===");
+    Log("=== STORM PS4 PKG INSTALLER v1.60 ===");
     Log("=== Installer Constructor Start ===");
     
     // Initialize task arrays (Static Globals)

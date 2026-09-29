@@ -1,6 +1,6 @@
 # Package metadata
 TITLE       := STORM PS4 PKG INSTALLER
-VERSION     := 1.50
+VERSION     := 1.60
 TITLE_ID    := SPPI01313
 CONTENT_ID  := IV0000-SPPI01313_00-STORMPKGINSTALL0
 
@@ -15,7 +15,7 @@ PROJDIR     := storm
 INTDIR      := STORM_PKG/x64/Debug
 
 # Define objects to build - Back to minimal_main (stable, no pthread)
-CPPFILES    := source/minimal_main.cpp source/Localization.cpp source/Graphics.cpp source/Installer.cpp source/HttpHelper.cpp source/WebServer.cpp source/JsonHelper.cpp source/ThreadHelper.cpp source/libjbc.cpp source/PkgUtils.cpp
+CPPFILES    := source/minimal_main.cpp source/Localization.cpp source/SystemInfo.cpp source/Graphics.cpp source/Installer.cpp source/HttpHelper.cpp source/WebServer.cpp source/JsonHelper.cpp source/ThreadHelper.cpp source/libjbc.cpp source/PkgUtils.cpp
 OBJS        := $(patsubst source/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
 
 # Define final C/C++ flags

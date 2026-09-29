@@ -11,7 +11,7 @@ static AppLanguage s_currentLanguage = AppLanguage::English;
 static const char* s_translations[6][STR_COUNT] = {
     // 0: Русский (Russian)
     {
-        "STORM PS4 PKG INSTALLER v1.50",
+        "STORM PS4 PKG INSTALLER v1.60",
         "В СЕТИ",
         "ОФФЛАЙН",
         "ЗАВЕРШЕНО",
@@ -44,11 +44,16 @@ static const char* s_translations[6][STR_COUNT] = {
         "Нет фона",
         "Система готова",
         "Ожидание пакетов...",
-        "Русский"
+        "Русский",
+        "Хранилище",
+        "свободно из",
+        "Недостаточно свободного места на диске!",
+        "Мало места",
+        "Модель"
     },
     // 1: English
     {
-        "STORM PS4 PKG INSTALLER v1.50",
+        "STORM PS4 PKG INSTALLER v1.60",
         "ONLINE",
         "OFFLINE",
         "COMPLETED",
@@ -81,11 +86,16 @@ static const char* s_translations[6][STR_COUNT] = {
         "No BG",
         "System ready",
         "Waiting for packages...",
-        "English"
+        "English",
+        "Storage",
+        "free of",
+        "Not enough free disk space!",
+        "Low space",
+        "Model"
     },
     // 2: Deutsch (German)
     {
-        "STORM PS4 PKG INSTALLER v1.50",
+        "STORM PS4 PKG INSTALLER v1.60",
         "ONLINE",
         "OFFLINE",
         "ABGESCHLOSSEN",
@@ -118,11 +128,16 @@ static const char* s_translations[6][STR_COUNT] = {
         "Kein Hintergrund",
         "System bereit",
         "Warte auf Pakete...",
-        "Deutsch"
+        "Deutsch",
+        "Speicher",
+        "frei von",
+        "Nicht genügend freier Speicherplatz!",
+        "Wenig Speicher",
+        "Modell"
     },
     // 3: Français (French)
     {
-        "STORM PS4 PKG INSTALLER v1.50",
+        "STORM PS4 PKG INSTALLER v1.60",
         "EN LIGNE",
         "HORS LIGNE",
         "TERMINÉ",
@@ -155,11 +170,16 @@ static const char* s_translations[6][STR_COUNT] = {
         "Pas d'arrière-plan",
         "Système prêt",
         "En attente de paquets...",
-        "Français"
+        "Français",
+        "Stockage",
+        "libre sur",
+        "Espace disque libre insuffisant !",
+        "Espace faible",
+        "Modèle"
     },
     // 4: 简体中文 (Chinese)
     {
-        "STORM PS4 PKG INSTALLER v1.50",
+        "STORM PS4 PKG INSTALLER v1.60",
         "在线",
         "离线",
         "已完成",
@@ -192,11 +212,16 @@ static const char* s_translations[6][STR_COUNT] = {
         "无背景",
         "系统就绪",
         "等待安装包...",
-        "中文"
+        "中文",
+        "存储空间",
+        "可用 / 共",
+        "主机磁盘剩余空间不足！",
+        "空间不足",
+        "型号"
     },
     // 5: 日本語 (Japanese)
     {
-        "STORM PS4 PKG INSTALLER v1.50",
+        "STORM PS4 PKG INSTALLER v1.60",
         "オンライン",
         "オフライン",
         "完了",
@@ -229,7 +254,12 @@ static const char* s_translations[6][STR_COUNT] = {
         "背景なし",
         "準備完了",
         "パッケージ待機中...",
-        "日本語"
+        "日本語",
+        "ストレージ",
+        "空き / 合計",
+        "本体ストレージの空き容量が不足しています！",
+        "容量低下",
+        "モデル"
     }
 };
 

@@ -1,6 +1,8 @@
 #include "../include/WebServer.h"
 #include "../include/Common.h"
 #include "../include/Installer.h"
+#include "../include/SystemInfo.h"
+#include "../include/Localization.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -15,8 +17,10 @@
 // Server state
 static int s_serverSocketPrimary = -1;
 static int s_serverSocketRpi = -1;
+static int s_serverSocketPkgFlow = -1;
 static int s_primaryPort = 12813;
 static int s_rpiPort = 12800;
+static int s_pkgFlowPort = 12801;
 static bool s_running = false;
 static char s_lastError[256] = {0};
 static Installer* s_installer = nullptr;
@@ -145,9 +149,17 @@ static void HandleInstall(int conn, const char* body) {
         return;
     }
     
-    Log("HandleInstall: Calling Installer->Install");
     // Extract file_size from JSON if present
     uint64_t fileSize = ExtractJsonLong(body, "file_size");
+    if (fileSize == 0) fileSize = ExtractJsonLong(body, "size");
+    
+    // Pre-flight space check to protect from BGFT 0x80990004 crash
+    if (fileSize > 0 && !SystemInfo_CheckHasEnoughSpace(fileSize)) {
+        Log("HandleInstall: Not enough free space on /user! Required: %llu bytes", (unsigned long long)fileSize);
+        ShowNotification(Loc(STR_ERR_NO_SPACE));
+        WebServer_SendError(conn, 0x80990001, "Not enough free disk space on PS4");
+        return;
+    }
     
     int taskId = s_installer->Install(url, "Package", fileSize);
     Log("HandleInstall: Install returned taskId=%d", taskId);
@@ -515,11 +527,90 @@ static void HandleRequest(int conn) {
         } else {
             WebServer_SendError(conn, 500, "Installer not initialized");
         }
+    } else if (strstr(endpoint, "/ping")) {
+        char json[128];
+        snprintf(json, sizeof(json), "{\"status\":\"ok\",\"service\":\"PackegeFlowService\",\"version\":\"1.60\"}\n");
+        WebServer_SendSuccess(conn, json);
+    } else if (strstr(endpoint, "/system/info") || strstr(endpoint, "/api/system/info")) {
+        const SystemModelInfo* sys = SystemInfo_Get();
+        char json[512];
+        snprintf(json, sizeof(json),
+            "{\"status\":\"success\",\"service\":\"PackegeFlowService\",\"version\":\"1.60\","
+            "\"environment\":\"ps4\",\"pkgVersion\":\"1.60\","
+            "\"firmware\":{\"version\":\"%s\"},"
+            "\"model\":{\"name\":\"%s\",\"family\":\"%s\"},"
+            "\"hen\":{\"name\":\"GoldHEN\",\"version\":\"%s\",\"sdkVersion\":\"2.4\"},"
+            "\"filesystemAccess\":{\"enabled\":true}}\n",
+            sys->firmwareStr, sys->modelName, sys->isNeo ? "PS4 Pro" : "PS4", sys->henVersion);
+        WebServer_SendSuccess(conn, json);
+    } else if (strstr(endpoint, "/storage") || strstr(endpoint, "/api/storage")) {
+        StorageInfo userStorage;
+        SystemInfo_GetStorage("/user", &userStorage);
+        char json[512];
+        snprintf(json, sizeof(json),
+            "{\"status\":\"success\",\"service\":\"PackegeFlowService\",\"version\":\"1.60\","
+            "\"volumes\":[{"
+            "\"id\":\"user\",\"path\":\"/user\",\"available\":true,"
+            "\"totalBytes\":%llu,\"freeBytes\":%llu,\"availableBytes\":%llu,\"usedBytes\":%llu"
+            "}]}\n",
+            (unsigned long long)userStorage.totalBytes,
+            (unsigned long long)userStorage.freeBytes,
+            (unsigned long long)userStorage.freeBytes,
+            (unsigned long long)userStorage.usedBytes);
+        WebServer_SendSuccess(conn, json);
+    } else if (strstr(endpoint, "/install/capabilities")) {
+        char json[256];
+        snprintf(json, sizeof(json),
+            "{\"service\":\"PackegeFlowService\",\"version\":\"1.60\",\"installApi\":1,"
+            "\"authentication\":\"none\",\"ready\":true,"
+            "\"contentTypes\":[\"game\",\"patch\",\"dlc\",\"theme\"]}\n");
+        WebServer_SendSuccess(conn, json);
+    } else if (strstr(endpoint, "/install/pair")) {
+        char json[128];
+        snprintf(json, sizeof(json),
+            "{\"service\":\"PackegeFlowService\",\"paired\":true,\"token\":\"0123456789abcdef0123456789abcdef\"}\n");
+        WebServer_SendSuccess(conn, json);
+    } else if (strstr(endpoint, "/install/jobs")) {
+        char url[1024];
+        ExtractUrl(body, url, sizeof(url));
+        uint64_t fileSize = ExtractJsonLong(body, "size");
+        if (fileSize == 0) fileSize = ExtractJsonLong(body, "file_size");
+        
+        char reqId[64] = "job-0";
+        const char* reqPtr = strstr(body, "requestId");
+        if (reqPtr) {
+            const char* colon = strchr(reqPtr, ':');
+            if (colon) {
+                colon++;
+                while (*colon == ' ' || *colon == '"') colon++;
+                int idx = 0;
+                while (colon[idx] && colon[idx] != '"' && colon[idx] != '}' && colon[idx] != ',' && idx < 63) {
+                    reqId[idx] = colon[idx];
+                    idx++;
+                }
+                reqId[idx] = '\0';
+            }
+        }
+        
+        if (fileSize > 0 && !SystemInfo_CheckHasEnoughSpace(fileSize)) {
+            Log("HandleRequest: PackageFlow job: Not enough disk space! Required: %llu bytes", (unsigned long long)fileSize);
+            ShowNotification(Loc(STR_ERR_NO_SPACE));
+            WebServer_SendError(conn, 0x80990001, "Not enough free disk space on PS4");
+        } else if (s_installer && strlen(url) > 0) {
+            int taskId = s_installer->Install(url, "Package", fileSize);
+            char json[256];
+            snprintf(json, sizeof(json),
+                "{\"service\":\"PackegeFlowService\",\"status\":\"queued\",\"requestId\":\"%s\",\"taskId\":%d}\n",
+                reqId, taskId);
+            WebServer_SendSuccess(conn, json);
+        } else {
+            WebServer_SendError(conn, -1, "Failed to register job");
+        }
     } else {
         // Default: show status
-        char json[256];
-        snprintf(json, sizeof(json), "{\"status\":\"success\",\"app\":\"STORM PS4 PKG INSTALLER\",\"version\":\"1.50\",\"primary_port\":%d,\"rpi_port\":%d}\n",
-                 s_primaryPort, s_rpiPort);
+        char json[384];
+        snprintf(json, sizeof(json), "{\"status\":\"success\",\"app\":\"STORM PS4 PKG INSTALLER\",\"version\":\"1.60\",\"primary_port\":%d,\"rpi_port\":%d,\"pkgflow_port\":%d}\n",
+                 s_primaryPort, s_rpiPort, s_pkgFlowPort);
         WebServer_SendSuccess(conn, json);
     }
     
@@ -528,7 +619,9 @@ static void HandleRequest(int conn) {
 
 int WebServer_GetPrimaryPort() { return s_primaryPort; }
 int WebServer_GetRpiPort() { return s_rpiPort; }
+int WebServer_GetPkgFlowPort() { return s_pkgFlowPort; }
 bool WebServer_IsRpiPortActive() { return s_serverSocketRpi >= 0; }
+bool WebServer_IsPkgFlowPortActive() { return s_serverSocketPkgFlow >= 0; }
 
 static int CreateBoundSocket(int port) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -559,11 +652,12 @@ static int CreateBoundSocket(int port) {
     return sock;
 }
 
-int WebServer_Start(int port, int rpiPort) {
+int WebServer_Start(int port, int rpiPort, int pkgFlowPort) {
     s_primaryPort = port;
     s_rpiPort = rpiPort;
+    s_pkgFlowPort = pkgFlowPort;
     
-    // Bind primary port (12813)
+    // 1. Bind primary port (12813)
     s_serverSocketPrimary = CreateBoundSocket(s_primaryPort);
     if (s_serverSocketPrimary < 0) {
         snprintf(s_lastError, sizeof(s_lastError), "bind() failed on primary port %d", s_primaryPort);
@@ -572,7 +666,7 @@ int WebServer_Start(int port, int rpiPort) {
         Log("WebServer: Listening on primary port %d", s_primaryPort);
     }
     
-    // Bind standard RPI port (12800) for universal compatibility
+    // 2. Bind standard RPI port (12800) for universal compatibility
     if (rpiPort > 0 && rpiPort != port) {
         s_serverSocketRpi = CreateBoundSocket(rpiPort);
         if (s_serverSocketRpi < 0) {
@@ -581,8 +675,18 @@ int WebServer_Start(int port, int rpiPort) {
             Log("WebServer: Listening on standard RPI port %d", rpiPort);
         }
     }
+
+    // 3. Bind PackageFlow port (12801) for playstation_installer compatibility
+    if (pkgFlowPort > 0 && pkgFlowPort != port && pkgFlowPort != rpiPort) {
+        s_serverSocketPkgFlow = CreateBoundSocket(pkgFlowPort);
+        if (s_serverSocketPkgFlow < 0) {
+            Log("WebServer: Could not bind PackageFlow port %d (in use or restricted)", pkgFlowPort);
+        } else {
+            Log("WebServer: Listening on PackageFlow port %d", pkgFlowPort);
+        }
+    }
     
-    if (s_serverSocketPrimary < 0 && s_serverSocketRpi < 0) {
+    if (s_serverSocketPrimary < 0 && s_serverSocketRpi < 0 && s_serverSocketPkgFlow < 0) {
         s_running = false;
         return -1;
     }
@@ -601,10 +705,14 @@ void WebServer_Stop() {
         close(s_serverSocketRpi);
         s_serverSocketRpi = -1;
     }
+    if (s_serverSocketPkgFlow >= 0) {
+        close(s_serverSocketPkgFlow);
+        s_serverSocketPkgFlow = -1;
+    }
 }
 
 bool WebServer_IsRunning() {
-    return s_running && (s_serverSocketPrimary >= 0 || s_serverSocketRpi >= 0);
+    return s_running && (s_serverSocketPrimary >= 0 || s_serverSocketRpi >= 0 || s_serverSocketPkgFlow >= 0);
 }
 
 const char* WebServer_GetLastError() {
@@ -634,6 +742,20 @@ void WebServer_Process() {
             struct sockaddr_in clientAddr;
             socklen_t addrLen = sizeof(clientAddr);
             int conn = accept(s_serverSocketRpi, (struct sockaddr*)&clientAddr, &addrLen);
+            if (conn >= 0) {
+                HandleRequest(conn);
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Process up to 5 connections on PackageFlow port (12801)
+    if (s_serverSocketPkgFlow >= 0) {
+        for (int i = 0; i < 5; i++) {
+            struct sockaddr_in clientAddr;
+            socklen_t addrLen = sizeof(clientAddr);
+            int conn = accept(s_serverSocketPkgFlow, (struct sockaddr*)&clientAddr, &addrLen);
             if (conn >= 0) {
                 HandleRequest(conn);
             } else {
