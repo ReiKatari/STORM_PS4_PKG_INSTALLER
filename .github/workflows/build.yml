@@ -38,9 +38,11 @@ jobs:
           echo "Downloading OpenOrbis Toolchain v0.5.4..."
           curl -sSL -o /tmp/toolchain.tar.gz https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
           echo "Extracting OpenOrbis Toolchain..."
-          tar -xzf /tmp/toolchain.tar.gz -C "$HOME/OpenOrbis"
+          tar -xzf /tmp/toolchain.tar.gz --strip-components=2 -C "$HOME/OpenOrbis"
           rm -f /tmp/toolchain.tar.gz
-          chmod +x -R "$HOME/OpenOrbis/bin/linux" || true
+          chmod -R +x "$HOME/OpenOrbis/bin/linux" || true
+          ls -la "$HOME/OpenOrbis"
+          ls -la "$HOME/OpenOrbis/bin/linux"
           echo "OO_PS4_TOOLCHAIN=$HOME/OpenOrbis" >> $GITHUB_ENV
           echo "$HOME/OpenOrbis/bin/linux" >> $GITHUB_PATH
 
