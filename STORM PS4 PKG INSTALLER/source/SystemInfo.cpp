@@ -3,7 +3,6 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/statvfs.h>
-#include <sys/mount.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,9 +10,6 @@
 
 typedef int (*statvfs_t)(const char*, struct statvfs*);
 static statvfs_t s_pfnStatvfs = NULL;
-
-typedef int (*statfs_t)(const char*, struct statfs*);
-static statfs_t s_pfnStatfs = NULL;
 
 typedef int (*sceKernelIsNeoMode_t)();
 typedef int (*sceKernelGetSystemSwVersion_t)(uint32_t*);
@@ -26,7 +22,6 @@ void SystemInfo_Init() {
     memset(&s_modelInfo, 0, sizeof(s_modelInfo));
 
     s_pfnStatvfs = (statvfs_t)dlsym(RTLD_DEFAULT, "statvfs");
-    s_pfnStatfs = (statfs_t)dlsym(RTLD_DEFAULT, "statfs");
 
     // 1. Detect PS4 Model (PS4 Pro / Neo vs Standard PS4)
     sceKernelIsNeoMode_t fnIsNeo = (sceKernelIsNeoMode_t)dlsym(RTLD_DEFAULT, "sceKernelIsNeoMode");
@@ -86,17 +81,6 @@ bool SystemInfo_GetStorage(const char* path, StorageInfo* outInfo) {
         }
     }
 
-    // Fallback: statfs
-    if (!querySuccess && s_pfnStatfs) {
-        struct statfs sfs;
-        if (s_pfnStatfs(path, &sfs) == 0 && sfs.f_blocks > 0) {
-            uint64_t blockSize = (uint64_t)sfs.f_bsize;
-            outInfo->totalBytes = (uint64_t)sfs.f_blocks * blockSize;
-            outInfo->freeBytes = (uint64_t)sfs.f_bavail * blockSize;
-            outInfo->usedBytes = outInfo->totalBytes > outInfo->freeBytes ? (outInfo->totalBytes - outInfo->freeBytes) : 0;
-            querySuccess = true;
-        }
-    }
 
     // Fallback defaults if sandbox prohibits filesystem probing
     if (!querySuccess || outInfo->totalBytes == 0) {
