@@ -31,6 +31,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm libicu-dev make curl tar
+          # Install OpenSSL 1.1 compatibility package required by PkgTool.Core
+          curl -sSL -o /tmp/libssl1.1.deb http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb
+          sudo dpkg -i /tmp/libssl1.1.deb || true
+          rm -f /tmp/libssl1.1.deb
 
       - name: Install OpenOrbis PS4 Toolchain
         run: |
