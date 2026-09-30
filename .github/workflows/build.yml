@@ -70,14 +70,6 @@ jobs:
             tail -n 200 /tmp/build_log.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             cat /tmp/build_log.txt
-            git config user.name "ReiKatari"
-            git config user.email "45316432+ReiKatari@users.noreply.github.com"
-            git checkout -B debug-log
-            cp /tmp/build_log.txt ../build_log.txt
-            cd ..
-            git add build_log.txt
-            git commit -m "ci(debug): build log output" || true
-            git push origin debug-log -f || true
             exit 1
           fi
 
@@ -106,7 +98,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: 1.60
+          tag_name: "1.60"
           name: STORM PS4 PKG INSTALLER 1.60
           body_path: RELEASE_NOTES.md
           files: |
