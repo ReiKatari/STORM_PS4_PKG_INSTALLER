@@ -49,8 +49,25 @@ jobs:
       - name: Compile and Build PS4 PKG
         run: |
           cd "STORM PS4 PKG INSTALLER"
+          echo "=== Environment Info ==="
+          echo "OO_PS4_TOOLCHAIN: $OO_PS4_TOOLCHAIN"
+          which clang clang++ ld.lld make dotnet || true
+          echo "=== Toolchain Contents ==="
+          ls -la "$OO_PS4_TOOLCHAIN" || true
+          ls -la "$OO_PS4_TOOLCHAIN/bin" || true
+          ls -la "$OO_PS4_TOOLCHAIN/bin/linux" || true
+          echo "=== Starting Build ==="
           make clean || true
-          make
+          make 2>&1 | tee /tmp/build_log.txt || true
+          if [ ! -f "IV0000-SPPI01313_00-STORMPKGINSTALL0.pkg" ]; then
+            echo "::error::PS4 PKG Build Failed!"
+            echo "### ❌ PS4 PKG Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            tail -n 200 /tmp/build_log.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/build_log.txt
+            exit 1
+          fi
 
       - name: Prepare Release Artifacts
         run: |
