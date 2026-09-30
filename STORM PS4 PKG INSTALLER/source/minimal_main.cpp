@@ -691,7 +691,7 @@ int main() {
             char qSizeBuf[32];
             if (totalQueueSize < 1024*1024) snprintf(qSizeBuf, sizeof(qSizeBuf), "%.1f MB", (float)totalQueueSize / (1024.0f*1024.0f));
             else snprintf(qSizeBuf, sizeof(qSizeBuf), "%.2f GB", (float)totalQueueSize / (1024.0f*1024.0f*1024.0f));
-            snprintf(strQueueStats, sizeof(strQueueStats), "%s: %d  |  %s", Loc(STR_QUEUE_STATS), totalQueueCount, qSizeBuf);
+            snprintf(strQueueStats, sizeof(strQueueStats), "%s: %d  |  %s", Loc(STR_PENDING), totalQueueCount, qSizeBuf);
             if (fontBold && fontBold->ttf_buffer) {
                 fontBold->DrawText(scene, xID, tableY - 45, strQueueStats, Color(150, 200, 250));
             } else {
@@ -770,9 +770,9 @@ int main() {
                     statusText = Loc(STR_ERROR);
                     statColor = colError;
                 } else if (strstr(tasks[i].status, "Queued")) {
-                    statusText = Loc(STR_QUEUED);
+                    statusText = Loc(STR_PENDING);
                 } else if (strstr(tasks[i].status, "Paused") || strstr(tasks[i].status, "Stopped")) {
-                    statusText = Loc(STR_PAUSED);
+                    statusText = Loc(STR_TASK_STOPPED);
                 }
                 
                 const char* catDisplay = LocCategory(tasks[i].category);
