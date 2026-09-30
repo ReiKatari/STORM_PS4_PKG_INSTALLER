@@ -22,14 +22,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compile and Build PS4 PKG
-        uses: OpenOrbis/toolchain-action@master
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
         with:
-          version: latest
-          command: |
-            cd "STORM PS4 PKG INSTALLER"
-            make clean || true
-            make
+          dotnet-version: '8.0.x'
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm libicu-dev make curl tar
+
+      - name: Install OpenOrbis PS4 Toolchain
+        run: |
+          mkdir -p "$HOME/OpenOrbis"
+          echo "Downloading OpenOrbis Toolchain v0.5.4..."
+          curl -sSL -o /tmp/toolchain.tar.gz https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
+          echo "Extracting OpenOrbis Toolchain..."
+          tar -xzf /tmp/toolchain.tar.gz -C "$HOME/OpenOrbis"
+          rm -f /tmp/toolchain.tar.gz
+          chmod +x -R "$HOME/OpenOrbis/bin/linux" || true
+          echo "OO_PS4_TOOLCHAIN=$HOME/OpenOrbis" >> $GITHUB_ENV
+          echo "$HOME/OpenOrbis/bin/linux" >> $GITHUB_PATH
+
+      - name: Compile and Build PS4 PKG
+        run: |
+          cd "STORM PS4 PKG INSTALLER"
+          make clean || true
+          make
 
       - name: Prepare Release Artifacts
         run: |

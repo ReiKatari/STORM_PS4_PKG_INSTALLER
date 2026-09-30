@@ -21,7 +21,8 @@ OBJS        := $(patsubst source/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
 # Define final C/C++ flags
 CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -c -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include
 CXXFLAGS    := $(CFLAGS) -isystem $(TOOLCHAIN)/include/c++/v1
-LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
+LINK_SCRIPT := $(if $(wildcard $(TOOLCHAIN)/link.x),$(TOOLCHAIN)/link.x,link.x)
+LDFLAGS     := -m elf_x86_64 -pie --script $(LINK_SCRIPT) --eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
 
 # Create intermediate directory
 _unused     := $(shell mkdir -p $(INTDIR) 2>nul)
